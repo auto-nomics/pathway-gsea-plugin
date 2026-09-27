@@ -1,0 +1,74 @@
+schema_version = 1
+plugin_name = "pathway-gsea"
+
+[image]
+reference = "ghcr.io/auto-nomics/autonomics/pathway-gsea@sha256:1eb3a32abe2f910e8a3e2c7b5cd8d9f45bf267dc7c57605103e5c30310740275"
+tag = "0.1.0"
+upstream = "Bioconductor fgsea (fgseaMultilevel) on bioconductor 3.21 / R 4.5.2"
+license = "Artistic-2.0"
+
+# The legacy wrapper bound no panels; this family legitimately omits
+# [[panels]] entirely.
+
+[[nodes]]
+kind = "pathway_gsea"
+desc = "Runs preranked GSEA with Bioconductor fgsea in a pinned container."
+doc = """
+Runs preranked GSEA with the official Bioconductor fgsea package
+(fgseaMultilevel). Input port 0 is a rank table: one tab-separated File
+with a gene-identifier column (gene_col) and a numeric score column
+(score_col); genes must be unique and non-empty, scores non-null. Input
+port 1 is the gene sets: either a GMT file (name, description, then
+tab-separated genes per line) or a long-format tab-separated table with a
+pathway-name column (pathway_col) and a gene column (pathway_gene_col).
+The node emits the fgsea report as a TSV artifact (pathway, pval, padj,
+NES, size, leadingEdge — leadingEdge joined with ;) plus a JSON artifact
+carrying the run parameters and results. The container is isolated and
+its root filesystem is read-only.
+"""
+timeout_secs = 3600
+artifact_prefix = "/artifacts/pathway_gsea"
+
+[nodes.ports]
+inputs = [
+  { type = "file", label = "rank_table", accepted_formats = ["tsv"] },
+  { type = "file", label = "gene_sets", accepted_formats = ["gmt", "tsv"] },
+]
+outputs = [
+  { path = "fgsea_report.tsv", format = "fgsea_report_tsv" },
+  { path = "fgsea_report.json", format = "fgsea_report_json" },
+]
+
+[nodes.params]
+gene_col = { type = "string", default = "gene", doc = "Rank-table column holding gene identifiers" }
+score_col = { type = "string", default = "score", doc = "Rank-table column holding numeric ranking scores" }
+pathway_col = { type = "string", default = "pathway_name", doc = "Pathway-table column holding pathway names (TSV gene-set input only)" }
+pathway_gene_col = { type = "string", default = "gene", doc = "Pathway-table column holding gene identifiers (TSV gene-set input only)" }
+min_size = { type = "int", default = 15, min = 1.0, doc = "Smallest gene set tested (fgseaMultilevel minSize)" }
+max_size = { type = "int", default = 500, min = 1.0, doc = "Largest gene set tested (fgseaMultilevel maxSize); must be at least min_size" }
+eps = { type = "number", default = 1e-50, exclusive_min = 0.0, doc = "fgseaMultilevel eps: multilevel algorithm precision" }
+
+[nodes.command]
+interpreter = "Rscript"
+script_file = "scripts/pathway_gsea.R.sh"
+
+[nodes.command.env]
+AUTONOMICS_GENE_COL = "{{ gene_col }}"
+AUTONOMICS_SCORE_COL = "{{ score_col }}"
+AUTONOMICS_PATHWAY_COL = "{{ pathway_col }}"
+AUTONOMICS_PATHWAY_GENE_COL = "{{ pathway_gene_col }}"
+AUTONOMICS_MIN_SIZE = "{{ min_size }}"
+AUTONOMICS_MAX_SIZE = "{{ max_size }}"
+AUTONOMICS_EPS = "{{ eps }}"
+
+# Byte-exact with the legacy wrapper's effective contract: it resolved
+# cpus/memory/pids_limit/shm_size to these constants unconditionally
+# (per-instance cpus/memory overrides existed in the legacy spec; the
+# plugin DSL pins resources per kind). network stays at the default
+# `isolated`, read_only_rootfs at the hardened default `true`, and
+# pull_policy at the default `missing`.
+[nodes.resources]
+cpus = 2.0
+memory = "8Gi"
+pids_limit = 512
+shm_size = "1Gi"
